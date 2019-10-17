@@ -23,14 +23,18 @@ df_new = df_new %>% select(-"blck_dat_Mean")
 dim(df_new)
 
 #*************************************************** DATA PROFILING ****************************************************************
+# Instead of repetitive line of codes (LOC), data is profiled using function below
+# Benefits : Simple, faster and efficient
+# Data profiling is done for both continuous and categorical variable
+
 
 # Initialize bin size for all variables - Continuous and Categorical
+# Modify as per requirement, as not all bin size = 10. Range : from 2 to 10
 dec_fix = integer(ncol(df_new))+10 
-
-# Instead of repetitive line of codes (LOC), data is profiled using function below
-# Data profiling is done for both continuous and categorical variable
  
-# Computes churn rate (for each decile bin) - Continuous and Categorical variable profiling
+# Function description : Based on class of data (i.e. continuous or categorical), churn rate at each bin is computed
+# For continuous variables, if proper decile is not found, it is not considered in modelling
+# For categorical variable, if churn percentage is low (i.e. less than 5%), it is not considered in modelling
 churn_perc = function(df_temp,n) #df_temp = dataframe, n = bin, cc = class
 {
   if(class(df_temp$IV)=="factor"){
@@ -70,10 +74,9 @@ sub_plots = function(df_new,dec_fix,start_col,end_col,exception)
 # Repeated codes is clumsy, thus deciling is performed using function. 
 # Each graph shows trend with variable name and data class.
 
-
+# Multiple graphs are loaded into grid of 3 rows and 4 columns. 
+# Note: In RStudio, R-Notebook displays as seperate sheet.
 par(mfrow=c(3,4))
-start_col=1
-end_col =9
 
 # Add column churn and customer_id to exceptions
 exception = which(names(df_new)=="churn")
@@ -89,6 +92,8 @@ df_new<-df_new[,-c(25,44)]
 names(df_new)
 
 #********************************************** Treatment of Outliers ********************************************************
+# For continuous variables (only): Impute outliers using mean value
+
 par(mfrow=c(3,3))
 for(i in 1:ncol(df_new))
 {
@@ -110,7 +115,9 @@ for(i in 1:ncol(df_new))
 }
 
 
-#************************************************* Treat Missing Values ******************************************************
+#************************************************* Treat Missing Values *******************************************************
+# For continuous  variable : Remove rows if number of missing values are less, otherwise impute missing values using mean value
+# For categorical variable : Modify missing values as new factor
 
 for(i in 1:ncol(df_new))
 {
@@ -153,11 +160,13 @@ df_new$mtrcycle  = as.factor(df_new$mtrcycle)
 df_new$truck     = as.factor(df_new$truck)
 str(df_new)
 
-# Experiment re-generation
+
+#******************************************************** MODELLING BEGINS *******************************************************
+# Add model features : randomness and re-creatability
 options(scipen = 999)
 set.seed(200)
 
-#******************************************* Splitting into Test and Training Samples *********************************************
+#************************************* Splitting data into Test and Training Samples *********************************************
 index = sample(nrow(df_new),0.70*nrow(df_new),replace=F)
 train = df_new[ index,]
 test  = df_new[-index,]
@@ -168,19 +177,20 @@ labels=c("0","1")
 train_percent = c(1-sum(train$churn)/nrow(train),sum(train$churn)/nrow(train))
 test_percent  = c(1-sum( test$churn)/nrow( test),sum( test$churn)/nrow( test))
 
+# Check whether proper splitting is achieved: If churn rate is close, then Accept splits.
 par(mfrow=c(1,2))
 pie(table(train$churn),main = "Churn Rate - Training Set", labels = paste(labels," : ",round(train_percent,2)," % "))
 pie(table(test$churn),main = "Churn Rate - Test Set", labels = paste(labels," : ",round(test_percent,2)," % "))
 # Ratio of churn rate is similar/close in both datasets. Continue. 
 
- churn_col = which(names(df_new)=="churn")
+churn_col  = which(names(df_new)=="churn")
 custid_col = which(names(df_new)=="Customer_ID")
 
 #********************************************** Logistic Regression Model *******************************************************
 mod_01 = glm(churn~.,data=train[,-c(custid_col)],family="binomial")
 summary(mod_01)
 
-# Creating Dummy Columns
+# Creating Dummy Columns for Categorical Variables (based on p-value)
 #
 train$area_Cal_Nrth   = ifelse(train$area == "CALIFORNIA NORTH AREA"        , 1, 0)
 train$area_texas      = ifelse(train$area == "CENTRAL/SOUTH TEXAS AREA"     , 1, 0)
@@ -272,7 +282,6 @@ test$age1_Young    = ifelse(test$age1  == "Young"  , 1, 0)
 #
 train$age2_Old     = ifelse(train$age2 == "Old"    , 1, 0)
 test$age2_Old      = ifelse(test$age2  == "Old"    , 1, 0)
-dim(df_new)
 
 
 #******************************** Re-running Model with Significant Variables (Based on p value) ***********************************
@@ -286,7 +295,7 @@ summary(mod_03)
 # Signs of the beta coefficients are in line, and probablity values is less than 5%
 # Thus, model can be finalised after checking multicollinearity.
 
-#************************************************** Check multi-colinearity *******************************************************
+#*************************************************** Check multi-colinearity *******************************************************
 # Import packages to check multi-collinearity
 library(car)
 vif(mod_03)
@@ -310,7 +319,7 @@ mod_06 =glm(churn ~ totmrc_Mean + rev_Range + mou_Range + change_mou + drop_blk_
 summary(mod_06)
 vif(mod_06)
 # All variables have become significant and vif values are less than 5. Thus, model mod_06 is finalized. 
-#......................................................... MODEL FINALIZED .........................................................
+#.................................................... MODEL FINALIZED .............................................................
 
 
 
@@ -329,7 +338,7 @@ kappa2(data.frame(test$churn,pred_bin))
 library(caret)
 confusionMatrix(test$churn,pred_bin,positive = "1")
 
-#ROCR Curve
+#*************************************************** ROC Curve and AUC *************************************************************
 library(ROCR)
 pred_R = prediction(test$churn,pred_bin)
 pref_R= performance(pred2,"tpr","fpr")
