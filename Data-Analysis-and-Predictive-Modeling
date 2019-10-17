@@ -351,4 +351,3 @@ gains(test$churn,predict(mod_06,type="response",newdata=test),groups = 10)
 # Similarly, the following can be done.
 test$prob = predict(mod_06,type="response",newdata=test)
 quantile(test$prob,prob=c(0.10,0.20,0.30,0.40,0.50,0.60,0.70,0.80,0.90,1))
-```
