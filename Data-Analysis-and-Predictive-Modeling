@@ -1,0 +1,354 @@
+# Import Mobicom dataset as dataframe
+df = read.csv("E:\\telecomfinal.csv", stringsAsFactors = T)
+head(df)
+
+#*********************************************** Descriptive Statistics *************************************************************
+str(df)
+summary(df) 
+dim(df)
+
+# See Missing Data Distribution 
+barplot(sort(colMeans(is.na(df)),decreasing = TRUE))
+
+#*************************************************** DATA WRANGLING ****************************************************************
+library(dplyr)
+
+# Cleaning the Data - Removing columns with 20% or more missing data        
+df_new = df[,colMeans(is.na(df)) <= 0.20]
+dim(df_new)
+barplot(sort(colMeans(is.na(df_new)),decreasing = TRUE))
+
+# Cleaning the Data - Removing columns with derived values [blck_dat_Mean]
+df_new = df_new %>% select(-"blck_dat_Mean")
+dim(df_new)
+
+#*************************************************** DATA PROFILING ****************************************************************
+
+# Initialize bin size for all variables - Continuous and Categorical
+dec_fix = integer(ncol(df_new))+10 
+
+# Instead of repetitive line of codes (LOC), data is profiled using function below
+# Data profiling is done for both continuous and categorical variable
+ 
+# Computes churn rate (for each decile bin) - Continuous and Categorical variable profiling
+churn_perc = function(df_temp,n) #df_temp = dataframe, n = bin, cc = class
+{
+  if(class(df_temp$IV)=="factor"){
+    D = df_temp %>% count(churn,levels=IV) %>% filter(churn==1)
+    D$N = unclass(df_temp %>% filter(IV%in%D$levels) %>% count(IV))[[2]]
+  }
+  else{
+    D = df_temp %>% mutate(dec=ntile(IV,n)) %>% count(churn,dec) %>% filter(churn==1)
+    D$N = unclass(df_temp%>%mutate(dec=ntile(IV,n))%>%count(dec))[[2]]  
+  }
+  
+  # Prevent Wrong deciling (for continuous variables)
+  if(length(D$n)==length(D$N)){   return(D$n/D$N)    }
+  else{
+    n = n-2
+    if(n >= 2){    churn_perc(df_temp,n)      }    
+    else      {    return(-1)                 }
+  }
+}
+
+# Plot barchart for columns [start_col  to  end_col]
+sub_plots = function(df_new,dec_fix,start_col,end_col,exception)
+{
+  for(i in start_col:end_col){
+    for(j in exception){
+      if(i!=j){
+        df_new$IV = df_new[,i]
+        data = churn_perc(df_new %>% select(churn,IV),dec_fix[i])
+        barplot(data,main=names(df_new)[i],sub=class(df_new[,i]))
+      }
+    }
+  }  
+}
+
+# Through Visualization, trend can be observed clearly.
+# As, all graph cannot be plotted in the same page, seperate grid is chosen.
+# Repeated codes is clumsy, thus deciling is performed using function. 
+# Each graph shows trend with variable name and data class.
+
+
+par(mfrow=c(3,4))
+start_col=1
+end_col =9
+
+# Add column churn and customer_id to exceptions
+exception = which(names(df_new)=="churn")
+
+# Plot all variables in grid to look for trend (Change dec_fix[i] as necessary)
+sub_plots(df_new,dec_fix,1,ncol(df_new),exception)
+
+# Removing Variables (continuous) that could be deciled, as it will become insignificant in the model
+df_new = df_new[,-c(13,16,17,22,23,45,48:50,56:58,65,66)]
+
+# Removing variables (categorical) that do no affect churn rate (i.e. where churn rate <=5 %)
+df_new<-df_new[,-c(25,44)]
+names(df_new)
+
+#********************************************** Treatment of Outliers ********************************************************
+par(mfrow=c(3,3))
+for(i in 1:ncol(df_new))
+{
+  if(class(df_new[,i])!="factor" & (names(df_new)!="churn")[i] & (names(df_new)!="Customer_ID")[i])
+  {
+    outside = boxplot(df_new[,i],main=names(df_new)[i])$out
+    out_index = which(df_new[,i]%in% outside)
+    df_new[out_index,i] = mean(df_new[,i],na.rm = TRUE)
+  }
+}
+# Check Outliers Treatment
+par(mfrow=c(3,3))
+for(i in 1:ncol(df_new))
+{
+  if(class(df_new[,i])!="factor")
+  {
+    boxplot(df_new[,i],main=names(df_new)[i])$out
+  }
+}
+
+
+#************************************************* Treat Missing Values ******************************************************
+
+for(i in 1:ncol(df_new))
+{
+  temp  = colSums(is.na(df_new))  
+  if(temp[i] > 0){
+    index = which(is.na(df_new[,i]))
+    
+    # For categorical variables
+    if(class(df_new[,i])=="factor"){
+      df_new[,i]      = as.character(df_new[,i])
+      df_new[index,i] = "Missing"
+      df_new[,i]      = as.factor(df_new[,i])
+    }
+    # For continuous variables - Removing missing values and Imputations
+    else
+    {
+      if(temp[i] < 100){
+        df_new = df_new[-index,]
+      }
+      else{
+        df_new[index,i] = mean(df_new[,i],na.rm = TRUE)
+      }
+    }
+  }
+}
+# Check Missing Value Count
+sum(colSums(is.na(df_new)))
+
+#***************************************************** Datatype Conversion *******************************************************
+df_new$age1      = ifelse(df_new$age1<=30,"Young",ifelse(df_new$age1>55,"Old","Mid_Age"))
+df_new$age1      = as.factor(df_new$age1)
+df_new$age2      = ifelse(df_new$age2<=30,"Young",ifelse(df_new$age2>55,"Old","Mid_Age"))
+df_new$age2      = as.factor(df_new$age2)
+df_new$models    = as.factor(df_new$models)
+df_new$hnd_price = as.factor(df_new$hnd_price)
+df_new$actvsubs  = as.factor(df_new$actvsubs)
+df_new$uniqsubs  = as.factor(df_new$uniqsubs)
+df_new$forgntvl  = as.factor(df_new$forgntvl)
+df_new$mtrcycle  = as.factor(df_new$mtrcycle)
+df_new$truck     = as.factor(df_new$truck)
+str(df_new)
+
+# Experiment re-generation
+options(scipen = 999)
+set.seed(200)
+
+#******************************************* Splitting into Test and Training Samples *********************************************
+index = sample(nrow(df_new),0.70*nrow(df_new),replace=F)
+train = df_new[ index,]
+test  = df_new[-index,]
+dim(train)
+dim(test)
+
+labels=c("0","1")
+train_percent = c(1-sum(train$churn)/nrow(train),sum(train$churn)/nrow(train))
+test_percent  = c(1-sum( test$churn)/nrow( test),sum( test$churn)/nrow( test))
+
+par(mfrow=c(1,2))
+pie(table(train$churn),main = "Churn Rate - Training Set", labels = paste(labels," : ",round(train_percent,2)," % "))
+pie(table(test$churn),main = "Churn Rate - Test Set", labels = paste(labels," : ",round(test_percent,2)," % "))
+# Ratio of churn rate is similar/close in both datasets. Continue. 
+
+ churn_col = which(names(df_new)=="churn")
+custid_col = which(names(df_new)=="Customer_ID")
+
+#********************************************** Logistic Regression Model *******************************************************
+mod_01 = glm(churn~.,data=train[,-c(custid_col)],family="binomial")
+summary(mod_01)
+
+# Creating Dummy Columns
+#
+train$area_Cal_Nrth   = ifelse(train$area == "CALIFORNIA NORTH AREA"        , 1, 0)
+train$area_texas      = ifelse(train$area == "CENTRAL/SOUTH TEXAS AREA"     , 1, 0)
+train$area_nrthflrda  = ifelse(train$area == "NORTH FLORIDA AREA"           , 1, 0)
+train$area_nrthwst    = ifelse(train$area == "NORTHWEST/ROCKY MOUNTAIN AREA", 1, 0)
+train$area_southflrda = ifelse(train$area == "SOUTH FLORIDA AREA"           , 1, 0)
+train$area_southwst   = ifelse(train$area == "SOUTHWEST AREA"               , 1, 0)
+train$area_tenese     = ifelse(train$area == "TENNESSEE AREA"               , 1, 0)
+
+test$area_Cal_Nrth    = ifelse(test$area == "CALIFORNIA NORTH AREA"         , 1, 0)
+test$area_texas       = ifelse(test$area == "CENTRAL/SOUTH TEXAS AREA"      , 1, 0)
+test$area_nrthflrda   = ifelse(test$area == "NORTH FLORIDA AREA"            , 1, 0)
+test$area_nrthwst     = ifelse(test$area == "NORTHWEST/ROCKY MOUNTAIN AREA" , 1, 0)
+test$area_southflrda  = ifelse(test$area == "SOUTH FLORIDA AREA"            , 1, 0)
+test$area_southwst    = ifelse(test$area == "SOUTHWEST AREA"                , 1, 0)
+test$area_tenese      = ifelse(test$area == "TENNESSEE AREA"                , 1, 0)
+
+#
+train$asl_flag_Y      = ifelse(train$asl_flag   == "Y"  , 1, 0)
+test$asl_flag_Y       = ifelse(test$asl_flag    == "Y"  , 1, 0)
+
+#
+train$refurb_R        = ifelse(train$refurb_new == "R", 1, 0)
+test$refurb_R         = ifelse(test$refurb_new  == "R", 1, 0)
+
+#
+train$hnd_price_79.98  = ifelse(train$hnd_price == "79.98999023"     , 1, 0)
+train$hnd_price_105.08 = ifelse(train$hnd_price == "105.083038078331", 1, 0)
+train$hnd_price_129.98 = ifelse(train$hnd_price == "129.9899902"     , 1, 0)
+train$hnd_price_149.98 = ifelse(train$hnd_price == "149.9899902"     , 1, 0)
+train$hnd_price_199.98 = ifelse(train$hnd_price == "199.9899902"     , 1, 0)
+train$hnd_price_249.98 = ifelse(train$hnd_price == "249.9899902"     , 1, 0)
+
+test$hnd_price_79.98   = ifelse(test$hnd_price  == "79.98999023"     , 1, 0)
+test$hnd_price_105.08  = ifelse(test$hnd_price  == "105.083038078331", 1, 0)
+test$hnd_price_129.98  = ifelse(test$hnd_price  == "129.9899902"     , 1, 0)
+test$hnd_price_149.98  = ifelse(test$hnd_price  == "149.9899902"     , 1, 0)
+test$hnd_price_199.98  = ifelse(test$hnd_price  == "199.9899902"     , 1, 0)
+test$hnd_price_249.98  = ifelse(test$hnd_price  == "249.9899902"     , 1, 0)
+
+#
+train$ethnic_C = ifelse(train$ethnic == "C", 1, 0)
+train$ethnic_N = ifelse(train$ethnic == "N", 1, 0)
+train$ethnic_O = ifelse(train$ethnic == "O", 1, 0)
+train$ethnic_S = ifelse(train$ethnic == "S", 1, 0)
+train$ethnic_U = ifelse(train$ethnic == "U", 1, 0)
+train$ethnic_Z = ifelse(train$ethnic == "Z", 1, 0)
+
+test$ethnic_C  = ifelse(test$ethnic  == "C", 1, 0)
+test$ethnic_N  = ifelse(test$ethnic  == "N", 1, 0)
+test$ethnic_O  = ifelse(test$ethnic  == "O", 1, 0)
+test$ethnic_S  = ifelse(test$ethnic  == "S", 1, 0)
+test$ethnic_U  = ifelse(test$ethnic  == "U", 1, 0)
+test$ethnic_Z  = ifelse(test$ethnic  == "Z", 1, 0)
+
+#
+train$unq_2 = ifelse(train$uniqsubs == "2", 1, 0)
+train$unq_3 = ifelse(train$uniqsubs == "3", 1, 0)
+train$unq_4 = ifelse(train$uniqsubs == "4", 1, 0)
+train$unq_5 = ifelse(train$uniqsubs == "5", 1, 0) 
+train$unq_6 = ifelse(train$uniqsubs == "6", 1, 0) 
+train$unq_7 = ifelse(train$uniqsubs == "7", 1, 0)
+train$unq_9 = ifelse(train$uniqsubs == "9", 1, 0)
+
+test$unq_2  = ifelse(test$uniqsubs  == "2", 1, 0)
+test$unq_3  = ifelse(test$uniqsubs  == "3", 1, 0)
+test$unq_4  = ifelse(test$uniqsubs  == "4", 1, 0)
+test$unq_5  = ifelse(test$uniqsubs  == "5", 1, 0)
+test$unq_6  = ifelse(test$uniqsubs  == "6", 1, 0)
+test$unq_7  = ifelse(test$uniqsubs  == "7", 1, 0)
+test$unq_9  = ifelse(test$uniqsubs  == "9", 1, 0)
+
+#
+train$przm_social_R = ifelse(train$prizm_social_one == "R", 1, 0)
+train$przm_social_T = ifelse(train$prizm_social_one == "T", 1, 0)
+
+test$przm_social_R  = ifelse(test$prizm_social_one  == "R", 1, 0)
+test$przm_social_T  = ifelse(test$prizm_social_one  == "T", 1, 0)
+
+#
+train$age1_Mid_Age = ifelse(train$age1 == "Mid_Age", 1, 0)
+train$age1_Old     = ifelse(train$age1 == "Old"    , 1, 0)
+train$age1_Young   = ifelse(train$age1 == "Young"  , 1, 0) 
+
+test$age1_Mid_Age  = ifelse(test$age1  == "Mid_Age", 1, 0)
+test$age1_Old      = ifelse(test$age1  == "Old"    , 1, 0)
+test$age1_Young    = ifelse(test$age1  == "Young"  , 1, 0)
+
+#
+train$age2_Old     = ifelse(train$age2 == "Old"    , 1, 0)
+test$age2_Old      = ifelse(test$age2  == "Old"    , 1, 0)
+dim(df_new)
+
+
+#******************************** Re-running Model with Significant Variables (Based on p value) ***********************************
+mod_02 = glm(churn ~ mou_Mean + totmrc_Mean + rev_Range + mou_Range + change_mou + drop_blk_Mean + drop_vce_Range + mou_opkv_Range + months + eqpdays + iwylis_vce_Mean + ovrrev_Mean + avgmou + avg3qty + avgqty + avg6mou + asl_flag_Y + area_Cal_Nrth + area_texas + area_nrthflrda + area_nrthwst + area_southflrda + area_southwst + area_tenese + refurb_R + ethnic_C + ethnic_N + ethnic_O + ethnic_S + ethnic_U + ethnic_Z + hnd_price_79.98 + hnd_price_105.08 + hnd_price_129.98 + hnd_price_149.98 + hnd_price_199.98 + hnd_price_249.98 + unq_2 + unq_3 + unq_4 + unq_5 + unq_6 + unq_7 + unq_9 + truck + adjmou + totrev + retdays + complete_Mean + przm_social_R + przm_social_T + age1_Mid_Age + age1_Old + age1_Young + age2_Old,data=train,family="binomial")
+summary(mod_02)
+
+#******************************** Re-running Model with Significant Variables (Based on p value) ***********************************
+mod_03 = glm(churn ~ mou_Mean + totmrc_Mean + rev_Range + mou_Range + change_mou + drop_blk_Mean + drop_vce_Range + mou_opkv_Range + months + eqpdays + iwylis_vce_Mean + ovrrev_Mean + avgmou + avg3qty + avgqty + avg6mou + asl_flag_Y + area_Cal_Nrth + area_texas + area_nrthflrda + area_nrthwst + area_southflrda + area_southwst + area_tenese + refurb_R + ethnic_C + ethnic_N + ethnic_O + ethnic_S + ethnic_U + ethnic_Z + hnd_price_79.98 + hnd_price_105.08 + hnd_price_129.98 + hnd_price_149.98 + hnd_price_199.98 + hnd_price_249.98 + unq_2 + unq_3 + unq_4 + unq_7 + adjmou + totrev + retdays_1 + complete_Mean + przm_social_R + przm_social_T + age1_Mid_Age + age1_Old + age1_Young + age2_Old, data=train, family="binomial")
+summary(mod_03)
+# All variables have become significant. 
+# Signs of the beta coefficients are in line, and probablity values is less than 5%
+# Thus, model can be finalised after checking multicollinearity.
+
+#************************************************** Check multi-colinearity *******************************************************
+# Import packages to check multi-collinearity
+library(car)
+vif(mod_03)
+# vif must be less than 5. 
+# As mou_Mean, avgmou, avg3qty, avg6mou have values greater than 5, remove these variables and run again.
+
+#****************************************** Removing variable mou_Mean and re-run model ********************************************
+mod_04 = glm(churn ~ totmrc_Mean + rev_Range + mou_Range + change_mou + drop_blk_Mean + drop_vce_Range + mou_opkv_Range + months + eqpdays + iwylis_vce_Mean + ovrrev_Mean + avgmou + avg3qty + avgqty + avg6mou + asl_flag_Y + area_Cal_Nrth + area_texas + area_nrthflrda + area_nrthwst + area_southflrda + area_southwst + area_tenese + refurb_R + ethnic_C + ethnic_N + ethnic_O + ethnic_S + ethnic_U + ethnic_Z + hnd_price_79.98 + hnd_price_105.08 + hnd_price_129.98 + hnd_price_149.98 + hnd_price_199.98 + hnd_price_249.98 + unq_2 + unq_3 + unq_4 + unq_7 + adjmou + totrev + retdays_1 + complete_Mean + przm_social_R + przm_social_T + age1_Mid_Age + age1_Old + age1_Young + age2_Old, data=train, family="binomial")
+summary(mod_04)
+vif(mod4)
+# Still variables avgmou, avg3qty, have vif of > 5 
+
+#********************************************* Remove variables avgmou, avg3qty and re-run model ************************************
+mod_05 = glm(churn ~ totmrc_Mean + rev_Range + mou_Range + change_mou + drop_blk_Mean + drop_vce_Range + mou_opkv_Range + months + eqpdays + iwylis_vce_Mean + ovrrev_Mean + avg3qty + avgqty + avg6mou + asl_flag_Y + area_Cal_Nrth + area_texas + area_nrthflrda + area_nrthwst + area_southflrda + area_southwst + area_tenese + refurb_R + ethnic_C + ethnic_N + ethnic_O + ethnic_S + ethnic_U +ethnic_Z + hnd_price_79.98 + hnd_price_105.08 + hnd_price_129.98 + hnd_price_149.98 + hnd_price_199.98 + hnd_price_249.98 + unq_2 + unq_3 + unq_4 + unq_7 + adjmou + totrev + retdays_1 + complete_Mean + przm_social_R + przm_social_T + age1_Mid_Age + age1_Old + age1_Young + age2_Old, data=train, family="binomial")
+summary(mod_05)
+vif(mod_05)
+# Still variables avg3qty have vif of > 5
+
+#************************************************ Rerunning model after removing var avg3qty *****************************************
+mod_06 =glm(churn ~ totmrc_Mean + rev_Range + mou_Range + change_mou + drop_blk_Mean + drop_vce_Range + mou_opkv_Range + months + eqpdays + iwylis_vce_Mean + ovrrev_Mean + avgqty + avg6mou +  asl_flag_Y + area_Cal_Nrth + area_texas + area_nrthflrda + area_nrthwst + area_southflrda + area_southwst + area_tenese + refurb_R + ethnic_C + ethnic_N + ethnic_O + ethnic_S + ethnic_U +  ethnic_Z + hnd_price_79.98 + hnd_price_105.08 + hnd_price_129.98 + hnd_price_149.98 + hnd_price_199.98 +  hnd_price_249.98 + unq_2 + unq_3 + unq_4 + unq_7 + adjmou + totrev + retdays_1 + complete_Mean +  przm_social_R + przm_social_T + age1_Mid_Age + age1_Old + age2_Old, data=train, family="binomial")
+summary(mod_06)
+vif(mod_06)
+# All variables have become significant and vif values are less than 5. Thus, model mod_06 is finalized. 
+#......................................................... MODEL FINALIZED .........................................................
+
+
+
+#***************************************************** MODEL TESTING ***************************************************************
+# Predicting an outcome through Test Dataset
+pred = predict(mod_06, type="response", newdata=test)
+pred_bin = ifelse(pred < 0.2380871,0,1)
+table(pred_bin)
+
+#************************************************ Check Prediction Quality *********************************************************
+# Kappa Matrix
+library(irr)
+kappa2(data.frame(test$churn,pred_bin))
+
+# Confusion Matrix
+library(caret)
+confusionMatrix(test$churn,pred_bin,positive = "1")
+
+#ROCR Curve
+library(ROCR)
+pred_R = prediction(test$churn,pred_bin)
+pref_R= performance(pred2,"tpr","fpr")
+
+plot(pref_R,col="red")
+abline(0,1,lty=8,col="grey")
+auc = performance(pred_R,"auc")
+auc
+auc = unlist(slot(auc,"y.values"))
+auc
+
+#******************************************************** Gains Chart **************************************************************
+#Based on Gains Chart, probability of churning behavior can be determined for a portion of customer
+
+library(gains)
+gains(test$churn,predict(mod_06,type="response",newdata=test),groups = 10)
+
+
+# Similarly, the following can be done.
+test$prob = predict(mod_06,type="response",newdata=test)
+quantile(test$prob,prob=c(0.10,0.20,0.30,0.40,0.50,0.60,0.70,0.80,0.90,1))
+```
