@@ -1,0 +1,149 @@
+# ************************************* Top Line Business Questions to Senior Management *********************************************
+
+#********************************************************** Question 1 ***************************************************************
+# What are the top five factors driving likelihood of churn at Mobicom?
+
+head(sort(abs(mod_06$coefficients),decreasing = T),10)
+
+# Top 5 factors affecting churn and recommendations:
+# ------------------------------------------------------------------------------------------------------------
+# variable         beta coefficient  Comment
+# ---------------  ----------------  -------------------------------------------------------------------------
+# unq_7                 0.735625538   Roll out family bundles for families with 7 unique subscribers
+# retdays               0.670774312   Provide special offers to customers who makes retention calls
+#                                     Address their grieviances at the earliest possible
+# ethnic_O              0.313047896   Roll out special plans to people of Asian Ethnicity
+# area_nrthwst          0.283039470   Roll out special plans to people from from NORTHWEST/ROCKY MOUNTAIN AREA
+# area_southflrda       0.272490954   Roll out special plans to people from from SOUTH FLORIDA AREA
+# ------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+#********************************************************** Question 2 ***************************************************************
+# Validation of survey findings. Whether "cost and billing" and "network and service quality" are important factors influencing churn behaviour.  
+
+
+# -------------------------------------------------------
+# Cost and Billing variable              beta coefficient  
+# ------------------------------------   ----------------
+# totmrc_Mean                                -0.005294251
+# rev_Range                                   0.002095208
+# ovrrev_Mean                                 0.007265908 
+# totrev                                      0.000197018
+# An increase in beta value have very little impact on churn rate. 
+# Thus, cost and billing are not influencing churn benhavior.
+
+
+# Network and Service Quality Variable   beta coefficient
+# ------------------------------------   ----------------
+# mou_Range                                   0.000300765
+# change_mou                                 -0.000653979
+# drop_blk_Mean                               0.007668757
+# drop_vce_Range                              0.018691566 
+# mou_opkv_Range                             -0.001117168 
+# iwylis_vce_Mean                            -0.015130015
+# avgqty                                      0.001032554 
+# avg6mou                                    -0.000327649
+# adjmou                                      0.000014846
+# retdays                                     0.670774312
+# complete_Mean                              -0.001719650
+# Beta coefficient of variable retdays is significant and leads to churn behavior. 
+# With increase in number of days since retention call, churn rate increases. 
+# Therefore, address grievances as quickly as possible and provide special offer. 
+
+#  2b) Are data usage connectivity issues turning out to be costly? In other words, is it leading to churn? 
+
+# ---------------------------------
+# Data usage connectivity Variables
+# ---------------------------------
+# comp_dat_Mean
+# plcd_dat_Mean
+# opk_dat_Mean 
+# blck_dat_Mean
+# datovr_Mean 
+# datovr_Range
+# drop_dat_Mean
+# ---------------------------------
+
+# Comments:
+# 
+# According to global market survey, subscriber switch operators due to internet and recommendation from family and family. 
+# As, all variable shows ony 10%-15% make data calls or use internet, good quality network connectivity and service must be 
+# provided to reduce churn. 
+
+# Note: Very limited data is available. Thus, above variable may not shown significant impact on churn rate.
+
+
+
+
+
+
+#********************************************************** Question 3 ***************************************************************
+# Would you recommend rate plan migration as a proactive retention strategy?
+
+#  ------------------------------
+#  Variable      beta coefficient
+#  -----------   ----------------
+#  ovrrev_Mean        0.007265908
+#  ------------------------------
+
+# ovrrev_Mean ( = DATOVR_MEAN + VCEOVR_MEAN) do not show significant impact on churn behavior. 
+# Therefore, rate plan migration may not reduce churn behavior as a proactive retention strategy.
+# However, it may impact few customer, which can be addressed but on case-to-case basis. 
+
+
+
+
+
+
+#********************************************************** Question 4 ***************************************************************
+# What would be your recommendation on how to use this churn model for prioritisation of customers for a proactive retention campaigns in the future?
+
+# Gains Chart
+library(gains)
+gains(test$churn,predict(mod_06,type="response",newdata=test),groups = 10)
+# Gains Chart shows Top 20% probabilities have 29.5% customers who are most likely to churn.
+
+# Select customers with high probability of churn behavior
+test$prob = predict(mod_06,type="response",newdata=test)
+quantile(test$prob,prob=1:10/10)
+# Top 20% probabilities lie between 0.3042058 and 0.7529329
+
+# Applying cutoff value to predict customers who will churn
+pred_churn = predict(mod_06, type="response", newdata=test)
+pred_churn = ifelse(pred_churn>=0.3042058, 1, 0)
+table(test$churn,pred_churn)
+
+# Target customers - Find ID of target customers
+Targeted_customers = test[test$prob>0.3042058 & test$prob<=0.7529329 & test$churn=="1","Customer_ID"]
+Targeted_customers = as.data.frame(Targeted_customers)
+nrow(Targeted_customers)
+
+
+
+
+
+#********************************************************** Question 5 ***************************************************************
+# What would be the target segments for proactive retention campaigns? Falling ARPU forecast is also a concern and therefore, Mobicom would like to save their high revenue customers besides managing churn. Given a budget constraint of a contact list of 20% of the subscriber pool, which subscribers should prioritized if "revenue saves" is also a priority besides controlling churn. In other words, controlling churn is the primary objective and revenue saves is the secondary objective.
+
+pred_cust = predict(mod_06,type="response",newdata=test)
+test$prob = predict(mod_06,type="response",newdata=test)
+
+# Group probability and revenue into bins
+quantile(test$prob  ,prob=1:10/10)
+quantile(test$totrev,prob=1:10/10)
+test$Revenue_Levels = ifelse(test$totrev<670.660,"Low",ifelse(test$totrev>1034.281,"High","Mid"))
+test$prob_levels    = ifelse(pred_cust  <0.20   ,"Low",ifelse(pred_cust  >0.30    ,"High","Mid"))
+
+# Target customers segment based on probability, churn rate and revenue
+table(test$prob_levels,test$churn)
+table(test$prob_levels,test$Revenue_Levels)
+
+# High revenue customers target list
+Target_list = test[test$prob_levels=="High" & test$Revenue_Levels=="High","Customer_ID"]
+Target_list = as.data.frame(Target_list)
+
+#Number of high revenue customers
+nrow(Targeted1)
